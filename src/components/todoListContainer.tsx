@@ -17,7 +17,8 @@ interface Props {
 class TodoListContainer extends React.Component<Props> {
     onCreate = (): void => {
         const { TodosActions, input } = this.props;
-        TodosActions.create(input);
+        if (input.length !== 0)
+            TodosActions.create(input);
     }
     onRemove = (id: number): void => {
         const { TodosActions } = this.props;
