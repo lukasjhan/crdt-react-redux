@@ -1,12 +1,11 @@
 import React from "react";
 import TodoItem from "./todoItem";
-import { TodoItemDataParams } from "../store/modules/todo";
 
 interface Props {
   input: string;
-  todoItems: TodoItemDataParams[];
+  todoItems: string[];
   onCreate(): void;
-  onRemove(id: number): void;
+  onRemove(text: string): void;
   onChange(e: any): void;
 }
 
@@ -17,15 +16,12 @@ const TodoList: React.SFC<Props> = ({
   onRemove,
   onChange
 }) => {
-  const todoItemList = todoItems.map(todo => 
-      todo ? (
+  const todoItemList = todoItems.map((todo, index) => 
     <TodoItem
-      key={todo.id}
-      done={todo.done}
-      onRemove={() => onRemove(todo.id)}
-      text={todo.text}
-    />
-  ) : null);
+      key={index}
+      onRemove={() => onRemove(todo)}
+      text={todo}
+    />);
 
   return (
     <div>

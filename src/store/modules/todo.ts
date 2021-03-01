@@ -1,36 +1,31 @@
-export interface TodoItemDataParams {
-    id: number;
-    text: string;
-    done: boolean;
+import io from 'socket.io-client';
+import dispatch from 'redux';
+
+export interface CRDT {
+  add: Set<string>;
+  rem: Set<string>;
 }
 
 export interface TodoState {
-    todoItems: TodoItemDataParams[];
+    todoItems: string[];
     input: string;
+    socket: SocketIOClient.Socket;
+    crdt: CRDT;
 }
 
 export const CREATE = "todo/CREATE";
 export const REMOVE = "todo/REMOVE";
-export const TOGGLE = "todo/TOGGLE";
 export const CHANGE_INPUT = "todo/CHANGE_INPUT";
+export const UPDATE = "todo/UPDATE";
   
 interface CreateAction {
     type: typeof CREATE;
-    payload: TodoItemDataParams;
+    payload: string;
 }
 
 interface RemoveAction {
     type: typeof REMOVE;
-    meta: {
-        id: number;
-    };
-}
-
-interface ToggleAction {
-    type: typeof TOGGLE;
-    meta: {
-        id: number;
-    };
+    payload: string;
 }
 
 interface ChangeInputAction {
@@ -40,33 +35,28 @@ interface ChangeInputAction {
     };
 }
 
+interface UpdateAction {
+  type: typeof UPDATE;
+  payload: CRDT;
+}
+
 export type TodoActionTypes =
     | CreateAction
     | RemoveAction
-    | ToggleAction
-    | ChangeInputAction;
-
-  // actions
-
-let autoId = 0;
+    | ChangeInputAction
+    | UpdateAction;
 
 function create(text: string) {
     return {
       type: CREATE,
-      payload: {
-        id: autoId++,
-        text: text,
-        done: false
-      }
+      payload: text,
     };
 }
 
-function remove(id: number) {
+function remove(text: string) {
     return {
       type: REMOVE,
-      meta: {
-        id
-      }
+      payload: text,
     };
 }
 
@@ -78,39 +68,90 @@ function changeInput(input: string) {
       }
     };
   }
+
+function update(crdt: CRDT) {
+  console.log('update', crdt);
+  return {
+    type: UPDATE,
+    payload: crdt,
+  };
+}
   
   export const actionCreators = {
     create,
     remove,
-    changeInput
+    changeInput,
+    update,
 };
 
 // reducers
 
+export const global_socket = io.connect('http://localhost:4000', {
+  path: '/socket.io',
+  transports: ['websocket']
+});
+
 const initialState: TodoState = {
     todoItems: [],
-    input: ""
+    input: "",
+    socket: global_socket,
+    crdt: {
+      add: new Set<string>(),
+      rem: new Set<string>(),
+    }
 };
+
+export const merge = (crdt: CRDT): string[] => {
+  const differenceSet = new Set<string>(
+    [...crdt.add].filter(v => !crdt.rem.has(v))
+  );
+  return [...differenceSet];
+}
 
 export function todoReducer(
     state = initialState,
     action: TodoActionTypes
 ): TodoState {
+  const {socket, crdt} = state;
+  console.log('reducer', action.type);
     switch (action.type) {
-      case CREATE:
-        return {
-          input: "",
-          todoItems: [...state.todoItems, action.payload]
-        };
-      case REMOVE:
+      case CREATE: {
+        crdt.add.add(action.payload);
+        socket.emit('update', [...crdt.add], [...crdt.rem]);
+        const items = merge(crdt);
         return {
           ...state,
-          todoItems: state.todoItems.filter(todo => todo.id !== action.meta.id)
+          input: "",
+          todoItems: items,
+          crdt: crdt,
         };
+      }
+      case REMOVE: {
+        crdt.rem.add(action.payload);
+        socket.emit('update', [...crdt.add], [...crdt.rem]);
+        const items = merge(crdt);
+        return {
+          ...state,
+          todoItems: items,
+          crdt: crdt,
+        };
+      }
       case CHANGE_INPUT:
         return {
           ...state,
           input: action.meta.input
+        };
+      case UPDATE:
+        console.log("test");
+        const {add:serverAdd, rem:serverRem} = action.payload;
+        const newAdd = new Set<string>([...crdt.add, ...serverAdd]);
+        const newRem = new Set<string>([...crdt.rem, ...serverRem]);
+        const newCRDT = {add:newAdd, rem:newRem};
+        const items = merge(newCRDT);
+        return {
+          ...state,
+          todoItems: items,
+          crdt: newCRDT,
         };
       default:
         return state;
